@@ -7,6 +7,7 @@ import json
 from generator_ai import generate_quiz
 from audio_generator import process_quiz_audio
 from video_generator import create_quiz_video
+from youtube_uploader import upload_video_to_youtube # Import dipindah ke atas
 
 # ==========================================
 # KONFIGURASI HALAMAN STREAMLIT
@@ -25,8 +26,14 @@ if "quiz_data" not in st.session_state:
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-    # Keamanan: Input API Key bertipe password agar tersembunyi
-    api_key = st.text_input("Gemini API Key", type="password")
+    
+    # Cek apakah API Key sudah ada di Secrets Streamlit
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        st.success("🔑 API Key terdeteksi otomatis!")
+    else:
+        # Keamanan: Input API Key bertipe password agar tersembunyi
+        api_key = st.text_input("Gemini API Key", type="password")
     
     topik = st.text_input("Topik Kuis", placeholder="Contoh: Misteri Hewan Laut")
     
@@ -82,26 +89,28 @@ if st.session_state.quiz_data:
 else:
     st.info("Selesaikan Langkah 1 terlebih dahulu untuk bisa merender video.")
 
-    # Tambahkan import ini di bagian atas app.py
-from youtube_uploader import upload_video_to_youtube
-
+# ==========================================
+# LANGKAH 3: UPLOAD KE YOUTUBE
+# ==========================================
 st.subheader("Langkah 3: Upload ke YouTube")
 if st.button("🚀 Upload Video ke YouTube"):
     # Kita ambil data soal pertama sebagai judul (kamu bisa kustomisasi ini nanti)
     if st.session_state.quiz_data:
-        topik = st.session_state.quiz_data['topic']
-        video_path = "output_videos/video_soal_1.mp4"
+        topik_judul = st.session_state.quiz_data['topic']
+        video_path_upload = "output_videos/video_soal_1.mp4"
         
-        if os.path.exists(video_path):
+        if os.path.exists(video_path_upload):
             with st.spinner("Sedang mengunggah ke YouTube..."):
-                judul = f"Kuis {topik} Paling Susah! #shorts"
-                deskripsi = f"Bisakah kamu menjawab kuis tentang {topik} ini? \n\n#quiz #shorts"
+                judul_video = f"Kuis {topik_judul} Paling Susah! #shorts"
+                deskripsi_video = f"Bisakah kamu menjawab kuis tentang {topik_judul} ini? \n\n#quiz #shorts"
                 
                 # Eksekusi fungsi upload
-                hasil_id = upload_video_to_youtube(video_path, judul, deskripsi, ["quiz", "shorts"])
+                hasil_id = upload_video_to_youtube(video_path_upload, judul_video, deskripsi_video, ["quiz", "shorts"])
                 
                 if hasil_id:
                     st.success(f"Berhasil! Buka YouTube Studio untuk mengubah statusnya menjadi Public.")
                     st.write(f"Link Video: https://youtu.be/{hasil_id}")
         else:
             st.error("Video belum dirender. Jalankan Langkah 2 terlebih dahulu.")
+    else:
+         st.error("Data kuis belum ada. Silakan jalankan Langkah 1 terlebih dahulu.")
