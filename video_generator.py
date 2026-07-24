@@ -1,6 +1,19 @@
 from moviepy.editor import *
 import os
 
+# --- PATCH KEAMANAN IMAGEMAGICK UNTUK LINUX & STREAMLIT CLOUD ---
+if os.path.exists("/etc/ImageMagick-6/policy.xml"):
+    with open("/etc/ImageMagick-6/policy.xml", "r") as f:
+        policy_data = f.read()
+    # Mengubah izin dari 'none' menjadi 'read|write'
+    policy_data = policy_data.replace('rights="none" pattern="@*"', 'rights="read|write" pattern="@*"')
+    os.makedirs("/tmp/magick", exist_ok=True)
+    with open("/tmp/magick/policy.xml", "w") as f:
+        f.write(policy_data)
+    # Memaksa ImageMagick membaca konfigurasi baru yang sudah diizinkan
+    os.environ["MAGICK_CONFIGURE_PATH"] = "/tmp/magick"
+# -----------------------------------------------------------------
+
 # ==========================================
 # PENGATURAN RESOLUSI & WARNA (YOUTUBE SHORTS)
 # ==========================================
@@ -36,11 +49,13 @@ def create_quiz_video(question_data: dict, index: int, audio_dir: str = "assets_
     teks_pilihan = "\n\n".join([f"{abjad[i]}. {opsi}" for i, opsi in enumerate(question_data['options'])])
 
     # TextClip menggunakan method='caption' agar teks otomatis turun ke bawah (wrap) jika kepanjangan
+    # PERBAIKAN: Ganti 'Arial-Bold' menjadi 'DejaVu-Sans-Bold'
     txt_soal = TextClip(question_data['question'], fontsize=70, color=TEXT_COLOR, 
-                        font='Arial-Bold', size=(WIDTH - 150, None), method='caption', align='center')
+                        font='DejaVu-Sans-Bold', size=(WIDTH - 150, None), method='caption', align='center')
     
+    # PERBAIKAN: Ganti 'Arial' menjadi 'DejaVu-Sans'
     txt_opsi = TextClip(teks_pilihan, fontsize=60, color=TEXT_COLOR, 
-                        font='Arial', size=(WIDTH - 150, None), method='caption', align='West')
+                        font='DejaVu-Sans', size=(WIDTH - 150, None), method='caption', align='West')
 
     # Atur posisi teks di layar (X, Y)
     txt_soal = txt_soal.set_position(('center', 400))
@@ -59,7 +74,8 @@ def create_quiz_video(question_data: dict, index: int, audio_dir: str = "assets_
     timer_clips = []
     # Looping mundur 5, 4, 3, 2, 1
     for i in range(question_data['time_limit'], 0, -1):
-        txt_angka = TextClip(str(i), fontsize=150, color='yellow', font='Arial-Bold')
+        # PERBAIKAN: Ganti 'Arial-Bold' menjadi 'DejaVu-Sans-Bold'
+        txt_angka = TextClip(str(i), fontsize=150, color='yellow', font='DejaVu-Sans-Bold')
         txt_angka = txt_angka.set_position(('center', 1400)).set_duration(1)
         
         # Tumpuk: BG + Soal + Pilihan + Angka Timer
@@ -72,12 +88,15 @@ def create_quiz_video(question_data: dict, index: int, audio_dir: str = "assets_
     # TIMELINE KLIP 3: PEMBACAAN JAWABAN
     # ==========================================
     teks_jawaban_benar = f"Jawaban:\n{question_data['correct_answer']}"
+    
+    # PERBAIKAN: Ganti 'Arial-Bold' menjadi 'DejaVu-Sans-Bold'
     txt_benar = TextClip(teks_jawaban_benar, fontsize=80, color=HIGHLIGHT_COLOR, 
-                         font='Arial-Bold', size=(WIDTH - 150, None), method='caption', align='center')
+                         font='DejaVu-Sans-Bold', size=(WIDTH - 150, None), method='caption', align='center')
     txt_benar = txt_benar.set_position(('center', 800))
 
+    # PERBAIKAN: Ganti 'Arial-Italic' menjadi 'DejaVu-Sans' agar aman di Linux
     txt_fakta = TextClip(question_data['fun_fact'], fontsize=50, color='yellow', 
-                         font='Arial-Italic', size=(WIDTH - 150, None), method='caption', align='center')
+                         font='DejaVu-Sans', size=(WIDTH - 150, None), method='caption', align='center')
     txt_fakta = txt_fakta.set_position(('center', 1200))
 
     # Saat jawaban muncul, hilangkan pilihan A B C D, ganti dengan jawaban besar & fakta unik
