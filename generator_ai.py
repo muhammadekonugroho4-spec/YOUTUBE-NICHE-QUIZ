@@ -27,8 +27,11 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     """
     Meminta Gemini membuat kuis dan memaksanya mematuhi format JSON.
     """
+    # PERBAIKAN 1: Bersihkan API Key dari spasi atau tanda kutip tersembunyi
+    clean_api_key = api_key.strip().replace('"', '').replace("'", "")
+    
     # Konfigurasi API Key
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=clean_api_key)
     
     # Gunakan Gemini 1.5 Flash (Sangat cepat dan gratis untuk penggunaan wajar)
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -44,38 +47,37 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     
     print("🤖 Sedang meminta Gemini membuat kuis, mohon tunggu...")
     
-    try:
-        # Kita paksa output AI menjadi JSON menggunakan response_schema
-        response = model.generate_content(
-            prompt_text,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=QuizBatch
-            )
+    # PERBAIKAN 2: Tidak menggunakan try-except kosong agar app.py bisa 
+    # menangkap dan menampilkan pesan error asli dari server Google.
+    response = model.generate_content(
+        prompt_text,
+        generation_config=genai.GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=QuizBatch
         )
+    )
+    
+    # PERBAIKAN 3: Cek jika respon diblokir oleh Safety Filter
+    if not response.text:
+        raise Exception("Respon AI kosong. Kemungkinan topik kuis diblokir oleh Safety Filter Google.")
         
-        # Ubah string JSON dari AI menjadi Python Dictionary
-        quiz_data = json.loads(response.text)
-        return quiz_data
-        
-    except Exception as e:
-        print(f"❌ Terjadi kesalahan saat menghubungi API: {e}")
-        return None
+    # Ubah string JSON dari AI menjadi Python Dictionary
+    quiz_data = json.loads(response.text)
+    return quiz_data
 
 # ==========================================
-# 3. TEST RUN (UJI COBA SCRIPT)
+# 3. TEST RUN (UJI COBA SCRIPT LOKAL)
 # ==========================================
 if __name__ == "__main__":
-    # Ganti dengan API Key milikmu sendiri
+    # Ganti dengan API Key milikmu sendiri saat tes lokal
     MY_API_KEY = "MASUKKAN_API_KEY_GEMINI_DI_SINI"
     
-    # Kita tes membuat 3 soal tentang Misteri Laut Dalam
     TOPIK = "Misteri Hewan Laut Dalam"
     JUMLAH_SOAL = 3
     
-    hasil_kuis = generate_quiz(topic=TOPIK, num_questions=JUMLAH_SOAL, api_key=MY_API_KEY)
-    
-    if hasil_kuis:
+    try:
+        hasil_kuis = generate_quiz(topic=TOPIK, num_questions=JUMLAH_SOAL, api_key=MY_API_KEY)
         print("✅ Berhasil! Berikut hasil naskah kuis dari Gemini:\n")
-        # Print hasil dalam bentuk JSON yang rapi
         print(json.dumps(hasil_kuis, indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"❌ GAGAL: {str(e)}")
