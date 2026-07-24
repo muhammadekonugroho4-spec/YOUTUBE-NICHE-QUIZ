@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import List
 
 # ==========================================
-# 1. BAWA SKEMA DARI TAHAP 1
+# 1. SKEMA DATA
 # ==========================================
 class QuizQuestion(BaseModel):
     question: str = Field(description="Teks pertanyaan kuis.")
@@ -25,18 +25,34 @@ class QuizBatch(BaseModel):
 # ==========================================
 def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     """
-    Meminta Gemini membuat kuis dan memaksanya mematuhi format JSON.
-    Menggunakan model-model terbaru yang tersedia dari hasil pelacakan.
+    Meminta Gemini membuat kuis dengan template prompt yang sangat ketat
+    agar terhindar dari JSON yang terpotong.
     """
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
     genai.configure(api_key=clean_api_key)
     
+    # PERBAIKAN: Menambahkan contoh format JSON yang sangat jelas agar AI tidak bingung
     prompt_text = f"""
-    Kamu adalah seorang pembuat konten YouTube Shorts yang viral.
+    Kamu adalah seorang pembuat konten YouTube Shorts.
     Buatkan kuis tebak-tebakan tentang topik: '{topic}'.
     Jumlah pertanyaan: {num_questions}.
-    Gunakan bahasa Indonesia yang santai, asik, dan kekinian.
-    Pastikan tingkat kesulitannya bervariasi agar penonton penasaran.
+    Gunakan bahasa Indonesia yang santai.
+    
+    PENTING: Kamu WAJIB merespon HANYA menggunakan format JSON dengan struktur persis seperti ini:
+    {{
+      "topic": "{topic}",
+      "language": "id",
+      "questions": [
+        {{
+          "question": "pertanyaan disini",
+          "options": ["pilihan1", "pilihan2", "pilihan3"],
+          "correct_answer": "jawaban yang benar",
+          "time_limit": 5,
+          "fun_fact": "fakta unik",
+          "visual_prompt": "deskripsi gambar"
+        }}
+      ]
+    }}
     """
     
     generation_config = genai.GenerationConfig(
@@ -44,7 +60,6 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
         response_schema=QuizBatch
     )
     
-    # PERBAIKAN: Menggunakan model terbaru sesuai hasil deteksi terminalmu
     models_to_try = [
         "gemini-flash-latest",
         "gemini-3.5-flash",
@@ -57,23 +72,25 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     
     for model_name in models_to_try:
         try:
-            print(f"🔄 Mencoba menghubungi model: {model_name}...")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(
                 prompt_text,
                 generation_config=generation_config
             )
-            print(f"✅ Berhasil terhubung dengan model: {model_name}")
             break  
         except Exception as e:
             last_error = str(e)
-            print(f"⚠️ Model {model_name} gagal: {last_error}. Mencoba yang lain...")
             continue
     
     if response is None or not response.text:
         raise Exception(f"Semua versi model Gemini ditolak oleh server. Error terakhir: {last_error}")
         
     quiz_data = json.loads(response.text)
+    
+    # PERBAIKAN: Validasi ketat. Jika AI tidak membuatkan soal, langsung gagalkan di Langkah 1!
+    if "questions" not in quiz_data or len(quiz_data["questions"]) == 0:
+         raise Exception("AI gagal membuat daftar soal (Respon terpotong). Silakan klik tombol 'Buat Naskah' lagi.")
+         
     return quiz_data
 
 # ==========================================
