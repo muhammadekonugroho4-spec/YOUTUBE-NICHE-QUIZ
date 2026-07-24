@@ -3,7 +3,6 @@ import asyncio
 import os
 import json
 
-# Mengambil fungsi dari file-file pendukung
 from generator_ai import generate_quiz
 from audio_generator import process_quiz_audio
 from video_generator import create_quiz_video
@@ -17,7 +16,7 @@ st.set_page_config(page_title="Auto Quiz Generator", page_icon="🎬", layout="c
 st.title("🎬 AI Auto Shorts - Niche Quiz")
 st.write("Dashboard ini berjalan 100% di cloud. Laptopmu aman dari beban berat!")
 
-# Menyimpan data di memory (Session State) agar tidak hilang saat tombol ditekan
+# Menyimpan data di memory (Session State)
 if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = None
 
@@ -27,7 +26,6 @@ if "quiz_data" not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     
-    # Pengecekan API Key dari Secrets Streamlit Cloud
     api_key = ""
     if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"].strip() != "":
         api_key = st.secrets["GEMINI_API_KEY"]
@@ -44,16 +42,13 @@ with st.sidebar:
 st.subheader("Langkah 1: Buat Naskah Kuis")
 
 if st.button("🧠 Buat Naskah dengan Gemini", type="primary"):
-    # 1. Validasi Input Dasar
     if not api_key:
-        st.error("❌ API Key Gemini belum diisi! Masukkan API Key di sidebar atau di Secrets Streamlit.")
+        st.error("❌ API Key Gemini belum diisi!")
     elif not topik:
         st.warning("⚠️ Masukkan 'Topik Kuis' terlebih dahulu di sidebar.")
     else:
-        # 2. Tampilkan Notifikasi Melayang (Toast)
         st.toast("🚀 Menghubungi Gemini AI...", icon="🧠")
         
-        # 3. Gunakan st.status untuk Menampilkan Progres Detail
         with st.status("Sedang memproses naskah kuis...", expanded=True) as status:
             try:
                 st.write("📡 Mengirimkan instruksi ke Google Gemini...")
@@ -71,7 +66,6 @@ if st.button("🧠 Buat Naskah dengan Gemini", type="primary"):
                 status.update(label="❌ Terjadi Kesalahan!", state="error")
                 st.error(f"Error Teknis: {str(e)}")
 
-# Menampilkan hasil naskah jika sudah ada di memori
 if st.session_state.quiz_data:
     st.success("📄 Naskah aktif tersedia. Siap untuk diproses ke Langkah 2.")
     with st.expander("👀 Lihat Detail Naskah (JSON)", expanded=True):
@@ -80,7 +74,7 @@ if st.session_state.quiz_data:
 st.divider()
 
 # ==========================================
-# LANGKAH 2: GENERATE AUDIO & VIDEO
+# LANGKAH 2: GENERATE AUDIO & VIDEO (DIPERBAIKI)
 # ==========================================
 st.subheader("Langkah 2: Render Video")
 
@@ -88,27 +82,36 @@ if st.session_state.quiz_data:
     if st.button("🎥 Mulai Proses Render (Audio & Video)"):
         data = st.session_state.quiz_data
         
-        for idx, question in enumerate(data['questions'], start=1):
-            with st.status(f"Merender Video Soal Ke-{idx}...", expanded=True) as status_render:
-                try:
-                    # 1. Generate Audio
-                    st.write("🔊 Membuat suara naskah (Voiceover Edge-TTS)...")
-                    asyncio.run(process_quiz_audio(question, index=idx))
-                    
-                    # 2. Render Video
-                    st.write("🎬 Menggabungkan audio, teks, dan animasi timer (MoviePy)...")
-                    create_quiz_video(question, index=idx)
-                    
-                    status_render.update(label=f"✅ Video Soal Ke-{idx} Selesai!", state="complete", expanded=False)
-                    
-                    # Tampilkan Video
-                    video_path = f"output_videos/video_soal_{idx}.mp4"
-                    if os.path.exists(video_path):
-                        st.video(video_path)
+        # PERBAIKAN: Deteksi cerdas untuk mencari daftar soal
+        # Mencegah KeyError jika AI memformatnya secara berbeda
+        daftar_soal = []
+        if isinstance(data, dict):
+            # Mencari kunci 'questions', 'Questions', atau langsung pakai list jika ada
+            daftar_soal = data.get('questions', data.get('Questions', []))
+        elif isinstance(data, list):
+            daftar_soal = data
+            
+        if not daftar_soal:
+            st.error("❌ Format data naskah tidak dikenali atau kosong. Silakan klik ulang Langkah 1.")
+        else:
+            for idx, question in enumerate(daftar_soal, start=1):
+                with st.status(f"Merender Video Soal Ke-{idx}...", expanded=True) as status_render:
+                    try:
+                        st.write("🔊 Membuat suara naskah (Voiceover Edge-TTS)...")
+                        asyncio.run(process_quiz_audio(question, index=idx))
                         
-                except Exception as e:
-                    status_render.update(label=f"❌ Render Soal Ke-{idx} Gagal!", state="error")
-                    st.error(f"Error saat merender video: {str(e)}")
+                        st.write("🎬 Menggabungkan audio, teks, dan animasi timer (MoviePy)...")
+                        create_quiz_video(question, index=idx)
+                        
+                        status_render.update(label=f"✅ Video Soal Ke-{idx} Selesai!", state="complete", expanded=False)
+                        
+                        video_path = f"output_videos/video_soal_{idx}.mp4"
+                        if os.path.exists(video_path):
+                            st.video(video_path)
+                            
+                    except Exception as e:
+                        status_render.update(label=f"❌ Render Soal Ke-{idx} Gagal!", state="error")
+                        st.error(f"Error saat merender video: {str(e)}")
 else:
     st.info("💡 Selesaikan Langkah 1 terlebih dahulu untuk membuka fitur render video.")
 
@@ -121,7 +124,10 @@ st.subheader("Langkah 3: Upload ke YouTube")
 
 if st.button("🚀 Upload Video ke YouTube"):
     if st.session_state.quiz_data:
-        topik_judul = st.session_state.quiz_data['topic']
+        # Menghindari KeyError saat mencari topik untuk judul
+        data = st.session_state.quiz_data
+        topik_judul = data.get('topic', 'Kuis Viral') if isinstance(data, dict) else "Kuis Viral"
+        
         video_path_upload = "output_videos/video_soal_1.mp4"
         
         if os.path.exists(video_path_upload):
