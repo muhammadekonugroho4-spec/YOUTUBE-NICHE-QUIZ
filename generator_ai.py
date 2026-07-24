@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import google.generativeai as genai
 from pydantic import BaseModel, Field
 from typing import List
@@ -25,13 +26,11 @@ class QuizBatch(BaseModel):
 # ==========================================
 def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     """
-    Meminta Gemini membuat kuis dengan template prompt yang sangat ketat
-    agar terhindar dari JSON yang terpotong.
+    Meminta Gemini membuat kuis dan menangani error JSON yang terpotong.
     """
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
     genai.configure(api_key=clean_api_key)
     
-    # PERBAIKAN: Menambahkan contoh format JSON yang sangat jelas agar AI tidak bingung
     prompt_text = f"""
     Kamu adalah seorang pembuat konten YouTube Shorts.
     Buatkan kuis tebak-tebakan tentang topik: '{topic}'.
@@ -84,12 +83,22 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     
     if response is None or not response.text:
         raise Exception(f"Semua versi model Gemini ditolak oleh server. Error terakhir: {last_error}")
-        
-    quiz_data = json.loads(response.text)
+
+    # PERBAIKAN: Membersihkan teks dari blok markdown (```json ... ```)
+    raw_text = response.text
+    clean_text = re.sub(r'```json\s*', '', raw_text)
+    clean_text = re.sub(r'```', '', clean_text)
+    clean_text = clean_text.strip()
     
-    # PERBAIKAN: Validasi ketat. Jika AI tidak membuatkan soal, langsung gagalkan di Langkah 1!
+    try:
+        # Mencoba membaca string JSON yang sudah dibersihkan
+        quiz_data = json.loads(clean_text)
+    except json.JSONDecodeError:
+        # Menangkap error 'Unterminated string'
+        raise Exception("AI memberikan jawaban yang terpotong (Gagal membaca JSON). Jangan panik, cukup klik tombol 'Buat Naskah' sekali lagi.")
+    
     if "questions" not in quiz_data or len(quiz_data["questions"]) == 0:
-         raise Exception("AI gagal membuat daftar soal (Respon terpotong). Silakan klik tombol 'Buat Naskah' lagi.")
+         raise Exception("AI gagal membuat daftar soal. Silakan klik tombol 'Buat Naskah' sekali lagi.")
          
     return quiz_data
 
