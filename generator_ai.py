@@ -5,34 +5,31 @@ from pydantic import BaseModel, Field
 from typing import List
 
 # ==========================================
-# 1. BAWA SKEMA DARI TAHAP 1 (DIPERBAIKI)
+# 1. BAWA SKEMA DARI TAHAP 1
 # ==========================================
 class QuizQuestion(BaseModel):
     question: str = Field(description="Teks pertanyaan kuis.")
     options: List[str] = Field(description="Daftar 3 atau 4 pilihan jawaban.")
     correct_answer: str = Field(description="Jawaban yang benar dari pilihan.")
-    # PERBAIKAN: Menghapus default=5, diganti instruksi langsung di deskripsi
     time_limit: int = Field(description="Waktu hitung mundur (selalu isi dengan angka 5).")
     fun_fact: str = Field(description="Fakta unik 1 kalimat tentang jawaban benar.")
     visual_prompt: str = Field(description="Ide gambar latar belakang.")
 
 class QuizBatch(BaseModel):
     topic: str = Field(description="Topik utama dari kuis.")
-    # PERBAIKAN: Menghapus default="id"
     language: str = Field(description="Kode bahasa (selalu isi dengan teks 'id').")
     questions: List[QuizQuestion] = Field(description="Daftar pertanyaan.")
 
 # ==========================================
-# 2. FUNGSI UTAMA MEMANGGIL GEMINI
+# 2. FUNGSI UTAMA MEMANGGIL GEMINI (ANTI-GAGAL)
 # ==========================================
 def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     """
     Meminta Gemini membuat kuis dan memaksanya mematuhi format JSON.
+    Dilengkapi sistem coba-coba model jika salah satu model 404 (Not Found).
     """
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
     genai.configure(api_key=clean_api_key)
-    
-    model = genai.GenerativeModel("gemini-1.5-flash")
     
     prompt_text = f"""
     Kamu adalah seorang pembuat konten YouTube Shorts yang viral.
@@ -42,22 +39,48 @@ def generate_quiz(topic: str, num_questions: int, api_key: str) -> dict:
     Pastikan tingkat kesulitannya bervariasi agar penonton penasaran.
     """
     
-    response = model.generate_content(
-        prompt_text,
-        generation_config=genai.GenerationConfig(
-            response_mime_type="application/json",
-            response_schema=QuizBatch
-        )
+    generation_config = genai.GenerationConfig(
+        response_mime_type="application/json",
+        response_schema=QuizBatch
     )
     
-    if not response.text:
-        raise Exception("Respon AI kosong. Kemungkinan topik kuis diblokir oleh Safety Filter Google.")
+    # PERBAIKAN: Daftar nama model alternatif
+    # Skrip akan mencoba dari atas ke bawah.
+    models_to_try = [
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-flash-002",
+        "gemini-1.5-pro-latest"
+    ]
+    
+    response = None
+    last_error = ""
+    
+    # Mencoba model satu per satu
+    for model_name in models_to_try:
+        try:
+            print(f"🔄 Mencoba menghubungi model: {model_name}...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt_text,
+                generation_config=generation_config
+            )
+            print(f"✅ Berhasil terhubung dengan model: {model_name}")
+            break  # Jika berhasil, hentikan pencarian model dan lanjut ke bawah
+        except Exception as e:
+            last_error = str(e)
+            print(f"⚠️ Model {model_name} gagal: {last_error}. Mencoba yang lain...")
+            continue  # Lanjut coba model berikutnya di daftar
+    
+    # Jika semua model di daftar gagal semua
+    if response is None or not response.text:
+        raise Exception(f"Semua versi model Gemini ditolak oleh server. Error terakhir: {last_error}")
         
     quiz_data = json.loads(response.text)
     return quiz_data
 
 # ==========================================
-# 3. TEST RUN
+# 3. TEST RUN LOKAL
 # ==========================================
 if __name__ == "__main__":
     MY_API_KEY = "MASUKKAN_API_KEY_GEMINI_DI_SINI"
