@@ -1,0 +1,16 @@
+# Abaikan folder virtual environment
+.venv/
+venv/
+ENV/
+
+# Abaikan folder output audio dan video
+assets_audio/
+output_videos/
+
+# Abaikan file kredensial & rahasia (Sangat Penting!)
+client_secrets.json
+token.json
+
+# Abaikan cache Python
+__pycache__/
+*.pyc
