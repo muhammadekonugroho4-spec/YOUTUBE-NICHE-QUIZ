@@ -9,6 +9,17 @@ from video_generator import create_quiz_video
 from youtube_uploader import upload_video_to_youtube
 
 # ==========================================
+# MEMBANGKITKAN FILE RAHASIA DARI STREAMLIT SECRETS
+# ==========================================
+if "CLIENT_SECRETS" in st.secrets:
+    with open("client_secrets.json", "w") as f:
+        f.write(st.secrets["CLIENT_SECRETS"])
+
+if "TOKEN_JSON" in st.secrets:
+    with open("token.json", "w") as f:
+        f.write(st.secrets["TOKEN_JSON"])
+
+# ==========================================
 # KONFIGURASI HALAMAN STREAMLIT
 # ==========================================
 st.set_page_config(page_title="Auto Quiz Generator", page_icon="🎬", layout="centered")
