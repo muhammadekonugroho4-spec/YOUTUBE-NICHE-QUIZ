@@ -21,12 +21,32 @@ class ShortDramaStory(BaseModel):
     scenes: List[DramaScene] = Field(description="Daftar adegan drama.")
 
 # ==========================================
-# 2. FUNGSI GENERATE (DENGAN SUPER AUTO-FALLBACK)
+# 2. FUNGSI GENERATE (DENGAN AUTO-SCAN MODEL)
 # ==========================================
 def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries: int = 3) -> dict:
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
     genai.configure(api_key=clean_api_key)
     
+    # ---------------------------------------------------------
+    # FITUR BARU: RADAR PEMINDAI MODEL OTOMATIS DARI GOOGLE
+    # ---------------------------------------------------------
+    try:
+        # Meminta Google memberikan daftar semua model yang aktif untuk API Key ini
+        available_models = [
+            m.name.replace("models/", "") 
+            for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+    except Exception as e:
+        raise Exception(f"Gagal memindai daftar model dari Google. Cek validitas API Key. Error: {str(e)}")
+
+    if not available_models:
+        raise Exception("API Key Anda valid, tetapi akun ini tidak memiliki akses ke model teks apapun.")
+
+    # Mengurutkan daftar model agar memprioritaskan yang terbaru (gemini-1.5 / flash)
+    models_to_try = sorted(available_models, key=lambda x: ("1.5" in x, "flash" in x), reverse=True)
+    # ---------------------------------------------------------
+
     prompt_text = f"""
     Kamu adalah penulis naskah profesional untuk Short Drama China (C-Drama Shorts).
     Buatkan alur cerita dengan topik: '{topic}'.
@@ -38,23 +58,29 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries
     3. visual_description WAJIB Bahasa Inggris (deskripsi karakter Asia, latar, ekspresi).
     """
     
-    generation_config = genai.GenerationConfig(
-        response_mime_type="application/json",
-        response_schema=ShortDramaStory
-    )
+    # PERBAIKAN: Menghapus schema strict (response_schema) jika menggunakan model bebas
+    # karena beberapa model Google yang didapat dari scan mungkin belum support strict schema.
+    # Kita pancing manual lewat prompt agar formatnya tetap JSON.
+    prompt_text += """
     
-    # DAFTAR PANJANG MODEL CADANGAN (Dari yang paling cepat sampai paling canggih)
-    models_to_try = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-002",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-exp",
-        "gemini-1.5-pro",
-        "gemini-1.5-pro-latest",
-        "gemini-pro"
-    ]
+    PENTING: Kamu WAJIB merespon HANYA menggunakan format JSON valid persis seperti ini:
+    {
+      "title": "Judul Drama",
+      "genre": "Genre",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "visual_description": "English description...",
+          "narration_dialogue": "Dialog bahasa Indonesia...",
+          "character_speaking": "Nama Karakter"
+        }
+      ]
+    }
+    """
+
+    generation_config = genai.GenerationConfig(
+        response_mime_type="application/json"
+    )
     
     last_error = ""
     
@@ -89,7 +115,6 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries
                     error_msg = str(e)
                     last_error = f"[{model_name}] Error: {error_msg}"
                     
-                    # Jika model ini tidak ditemukan (404) atau tidak didukung, langsung lompat ke model cadangan berikutnya
                     if "404" in error_msg or "not found" in error_msg.lower() or "not supported" in error_msg.lower():
                         break 
                         
@@ -100,5 +125,4 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries
             last_error = str(e)
             continue
             
-    # Jika ke-9 model gagal semua
-    raise Exception(f"Gagal membuat naskah setelah mencoba {len(models_to_try)} versi AI berbeda. Detail Error Terakhir: {last_error}")
+    raise Exception(f"Gagal membuat naskah. Radar menemukan model ini: {available_models}. Tapi semuanya error. Detail Terakhir: {last_error}")
