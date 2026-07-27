@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import google.generativeai as genai
 from pydantic import BaseModel, Field
 from typing import List
@@ -12,31 +13,29 @@ class DramaScene(BaseModel):
     scene_number: int = Field(description="Nomor adegan (1, 2, 3, dst).")
     visual_description: str = Field(description="Deskripsi visual adegan dalam bahasa Inggris (karakter berwajah Asia/China, ekspresi, suasana).")
     narration_dialogue: str = Field(description="Dialog atau narasi bahasa Indonesia yang dramatis dan emosional.")
-    character_speaking: str = Field(description="Nama/peran karakter yang berbicara (misal: 'Pria Kaya', 'Wanita Protagonis', 'Narator').")
+    character_speaking: str = Field(description="Nama/peran karakter yang berbicara.")
 
 class ShortDramaStory(BaseModel):
-    title: str = Field(description="Judul drama yang menarik dan penasaran.")
-    genre: str = Field(description="Genre drama (misal: Balas Dendam, CEO Kaya, Pengkhianatan).")
+    title: str = Field(description="Judul drama yang menarik.")
+    genre: str = Field(description="Genre drama.")
     scenes: List[DramaScene] = Field(description="Daftar adegan drama.")
 
 # ==========================================
-# 2. FUNGSI UTAMA MEMANGGIL GEMINI
+# 2. FUNGSI GENERATE (DENGAN AUTO-RETRY & AUTO-SAVE)
 # ==========================================
-def generate_drama_script(topic: str, num_scenes: int, api_key: str) -> dict:
+def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries: int = 3) -> dict:
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
     genai.configure(api_key=clean_api_key)
     
     prompt_text = f"""
-    Kamu adalah penulis naskah profesional untuk Short Drama China (C-Drama Shorts) yang viral di TikTok dan Shorts.
-    Buatkan alur cerita drama pendek dengan tema/topik: '{topic}'.
-    Jumlah adegan/scene: {num_scenes}.
+    Kamu adalah penulis naskah profesional untuk Short Drama China (C-Drama Shorts).
+    Buatkan alur cerita dengan topik: '{topic}'.
+    Jumlah adegan: {num_scenes}.
     
-    ATURAN PENULISAN:
-    1. Cerita harus memiliki konflik yang cepat, dramatis, dan bikin penasaran (gaya Short Drama China).
-    2. Dialog/Narasi WAJIB menggunakan BAHASA INDONESIA yang emosional dan mudah dipahami penonton Indonesia.
-    3. 'visual_description' WAJIB dalam BAHASA INGGRIS, mendeskripsikan penampilan fisik karakter Tionghoa/China modern, ekspresi wajah, dan latar tempat.
-    
-    PENTING: Jawab HANYA menggunakan format JSON yang valid sesuai skema.
+    ATURAN:
+    1. Konflik dramatis, cepat, bikin penasaran.
+    2. Dialog WAJIB Bahasa Indonesia.
+    3. visual_description WAJIB Bahasa Inggris (deskripsi karakter Asia, latar, ekspresi).
     """
     
     generation_config = genai.GenerationConfig(
@@ -44,39 +43,36 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str) -> dict:
         response_schema=ShortDramaStory
     )
     
-    models_to_try = [
-        "gemini-flash-latest",
-        "gemini-3.5-flash",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash"
-    ]
+    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"]
     
-    response = None
-    last_error = ""
-    
-    for model_name in models_to_try:
+    # SISTEM LOOPING: Mencoba berulang kali jika AI terpotong/gagal
+    for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(
-                prompt_text,
-                generation_config=generation_config
-            )
-            break  
-        except Exception as e:
-            last_error = str(e)
+            model = genai.GenerativeModel(models_to_try[0])
+            response = model.generate_content(prompt_text, generation_config=generation_config)
+            
+            # Membersihkan teks
+            clean_text = re.sub(r'```json\s*', '', response.text)
+            clean_text = re.sub(r'```', '', clean_text).strip()
+            
+            # Jika berhasil dibaca, berarti tidak terpotong
+            drama_data = json.loads(clean_text)
+            
+            # AUTO-SAVE: Menyimpan naskah ke file JSON agar aman
+            with open("naskah_terakhir.json", "w", encoding="utf-8") as f:
+                json.dump(drama_data, f, ensure_ascii=False, indent=4)
+                
+            return drama_data # Langsung kembalikan hasil jika sukses
+            
+        except json.JSONDecodeError:
+            # Jika terpotong, diam-diam coba lagi tanpa memunculkan error ke web
+            print(f"Percobaan {attempt + 1} gagal (Teks AI terpotong). Mengulang kembali...")
+            time.sleep(2) # Jeda 2 detik sebelum mencoba lagi
             continue
-    
-    if response is None or not response.text:
-        raise Exception(f"Gagal menghubungi server AI. Error: {last_error}")
-
-    raw_text = response.text
-    clean_text = re.sub(r'```json\s*', '', raw_text)
-    clean_text = re.sub(r'```', '', clean_text)
-    clean_text = clean_text.strip()
-    
-    try:
-        drama_data = json.loads(clean_text)
-    except json.JSONDecodeError:
-        raise Exception("AI memberikan jawaban yang terpotong. Silakan klik tombol buat naskah lagi.")
-    
-    return drama_data
+        except Exception as e:
+            print(f"Percobaan {attempt + 1} error: {str(e)}")
+            time.sleep(2)
+            continue
+            
+    # Jika sudah dicoba 3 kali dan masih gagal terus
+    raise Exception("Sistem sudah mencoba 3 kali namun AI sedang sibuk/merespon terpotong. Silakan klik tombol buat naskah lagi.")
