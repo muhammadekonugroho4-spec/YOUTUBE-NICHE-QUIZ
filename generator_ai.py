@@ -43,36 +43,39 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries
         response_schema=ShortDramaStory
     )
     
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+    # PERBAIKAN: Kita paksa menggunakan gemini-1.5-flash yang terbukti paling stabil
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    last_error = ""
     
-    # SISTEM LOOPING: Mencoba berulang kali jika AI terpotong/gagal
+    # SISTEM LOOPING: Mencoba berulang kali
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel(models_to_try[0])
             response = model.generate_content(prompt_text, generation_config=generation_config)
             
-            # Membersihkan teks
+            # Membersihkan teks dari markdown json
             clean_text = re.sub(r'```json\s*', '', response.text)
             clean_text = re.sub(r'```', '', clean_text).strip()
             
-            # Jika berhasil dibaca, berarti tidak terpotong
+            # Membaca format
             drama_data = json.loads(clean_text)
             
-            # AUTO-SAVE: Menyimpan naskah ke file JSON agar aman
+            # AUTO-SAVE: Menyimpan naskah ke file JSON
             with open("naskah_terakhir.json", "w", encoding="utf-8") as f:
                 json.dump(drama_data, f, ensure_ascii=False, indent=4)
                 
-            return drama_data # Langsung kembalikan hasil jika sukses
+            return drama_data 
             
         except json.JSONDecodeError:
-            # Jika terpotong, diam-diam coba lagi tanpa memunculkan error ke web
-            print(f"Percobaan {attempt + 1} gagal (Teks AI terpotong). Mengulang kembali...")
-            time.sleep(2) # Jeda 2 detik sebelum mencoba lagi
+            last_error = "Teks AI terpotong (JSONDecodeError)."
+            print(f"Percobaan {attempt + 1} gagal: {last_error}")
+            time.sleep(2) 
             continue
         except Exception as e:
-            print(f"Percobaan {attempt + 1} error: {str(e)}")
+            # Mengambil error asli dari sistem Google
+            last_error = str(e)
+            print(f"Percobaan {attempt + 1} error: {last_error}")
             time.sleep(2)
             continue
             
-    # Jika sudah dicoba 3 kali dan masih gagal terus
-    raise Exception("Sistem sudah mencoba 3 kali namun AI sedang sibuk/merespon terpotong. Silakan klik tombol buat naskah lagi.")
+    # PERBAIKAN: Jika gagal 3 kali, tampilkan error aslinya ke website!
+    raise Exception(f"Gagal membuat naskah setelah 3 percobaan. Detail Error Asli: {last_error}")
