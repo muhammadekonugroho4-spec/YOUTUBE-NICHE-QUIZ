@@ -51,6 +51,11 @@ if st.button("🎬 Buat Naskah Drama dengan AI", type="primary"):
 # Tampilkan Hasil Naskah
 if st.session_state.drama_data:
     data = st.session_state.drama_data
+    
+    # MENAMPILKAN CATATAN AI YANG BERHASIL
+    if "model_used" in data:
+        st.info(f"🤖 Naskah ini sukses dibuat menggunakan model AI: **{data['model_used']}**")
+        
     st.success(f"📌 Judul Drama: **{data.get('title', 'Tanpa Judul')}** ({data.get('genre', 'Drama')})")
     
     st.write("---")

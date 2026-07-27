@@ -21,7 +21,7 @@ class ShortDramaStory(BaseModel):
     scenes: List[DramaScene] = Field(description="Daftar adegan drama.")
 
 # ==========================================
-# 2. FUNGSI GENERATE (DENGAN AUTO-RETRY & AUTO-SAVE)
+# 2. FUNGSI GENERATE (DENGAN SUPER AUTO-FALLBACK)
 # ==========================================
 def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries: int = 3) -> dict:
     clean_api_key = api_key.strip().replace('"', '').replace("'", "")
@@ -43,39 +43,62 @@ def generate_drama_script(topic: str, num_scenes: int, api_key: str, max_retries
         response_schema=ShortDramaStory
     )
     
-    # PERBAIKAN: Kita paksa menggunakan gemini-1.5-flash yang terbukti paling stabil
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # DAFTAR PANJANG MODEL CADANGAN (Dari yang paling cepat sampai paling canggih)
+    models_to_try = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-flash-002",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-1.5-pro",
+        "gemini-1.5-pro-latest",
+        "gemini-pro"
+    ]
+    
     last_error = ""
     
-    # SISTEM LOOPING: Mencoba berulang kali
-    for attempt in range(max_retries):
+    for model_name in models_to_try:
         try:
-            response = model.generate_content(prompt_text, generation_config=generation_config)
+            model = genai.GenerativeModel(model_name)
             
-            # Membersihkan teks dari markdown json
-            clean_text = re.sub(r'```json\s*', '', response.text)
-            clean_text = re.sub(r'```', '', clean_text).strip()
-            
-            # Membaca format
-            drama_data = json.loads(clean_text)
-            
-            # AUTO-SAVE: Menyimpan naskah ke file JSON
-            with open("naskah_terakhir.json", "w", encoding="utf-8") as f:
-                json.dump(drama_data, f, ensure_ascii=False, indent=4)
-                
-            return drama_data 
-            
-        except json.JSONDecodeError:
-            last_error = "Teks AI terpotong (JSONDecodeError)."
-            print(f"Percobaan {attempt + 1} gagal: {last_error}")
-            time.sleep(2) 
-            continue
+            for attempt in range(max_retries):
+                try:
+                    print(f"Mencoba AI model: {model_name} (Percobaan {attempt+1})")
+                    response = model.generate_content(prompt_text, generation_config=generation_config)
+                    
+                    clean_text = re.sub(r'```json\s*', '', response.text)
+                    clean_text = re.sub(r'```', '', clean_text).strip()
+                    
+                    drama_data = json.loads(clean_text)
+                    
+                    # SISIPKAN CATATAN: Model AI mana yang berhasil digunakan
+                    drama_data["model_used"] = model_name
+                    
+                    # AUTO-SAVE
+                    with open("naskah_terakhir.json", "w", encoding="utf-8") as f:
+                        json.dump(drama_data, f, ensure_ascii=False, indent=4)
+                        
+                    return drama_data 
+                    
+                except json.JSONDecodeError:
+                    last_error = f"[{model_name}] Teks AI terpotong."
+                    time.sleep(2) 
+                    continue
+                except Exception as e:
+                    error_msg = str(e)
+                    last_error = f"[{model_name}] Error: {error_msg}"
+                    
+                    # Jika model ini tidak ditemukan (404) atau tidak didukung, langsung lompat ke model cadangan berikutnya
+                    if "404" in error_msg or "not found" in error_msg.lower() or "not supported" in error_msg.lower():
+                        break 
+                        
+                    time.sleep(2)
+                    continue
+                    
         except Exception as e:
-            # Mengambil error asli dari sistem Google
             last_error = str(e)
-            print(f"Percobaan {attempt + 1} error: {last_error}")
-            time.sleep(2)
             continue
             
-    # PERBAIKAN: Jika gagal 3 kali, tampilkan error aslinya ke website!
-    raise Exception(f"Gagal membuat naskah setelah 3 percobaan. Detail Error Asli: {last_error}")
+    # Jika ke-9 model gagal semua
+    raise Exception(f"Gagal membuat naskah setelah mencoba {len(models_to_try)} versi AI berbeda. Detail Error Terakhir: {last_error}")
